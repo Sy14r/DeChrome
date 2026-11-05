@@ -101,7 +101,53 @@ final class DeChromeRuntime {
     }
 
     func prepare(force: Bool = false) throws -> DCPreparation {
-        try withOperationLock { try prepareUnlocked(force: force) }
+        try withOperationLock {
+            try refuseRunningBrowser()
+            try profileImporter().recoverIfNeeded()
+            return try prepareUnlocked(force: force)
+        }
+    }
+
+    private func profileImporter(sourceRoot: URL? = nil) -> DCProfileImporter {
+        let metadata = paths.dataURL.appendingPathComponent("imported-profile.json")
+        let initial = DCProfileImporter(destinationRoot: paths.profileURL, metadataURL: metadata,
+            sourceRoot: sourceRoot ?? DCProfileImporter.defaultSourceRoot(environment: environment))
+        if sourceRoot == nil, let state = initial.currentImport() {
+            return DCProfileImporter(destinationRoot: paths.profileURL, metadataURL: metadata,
+                sourceRoot: URL(fileURLWithPath: state.sourceRoot, isDirectory: true))
+        }
+        return initial
+    }
+
+    func availableChromeProfiles(sourceRoot: URL? = nil) throws -> [DCChromeProfile] {
+        try profileImporter(sourceRoot: sourceRoot).listProfiles()
+    }
+
+    func importedProfile() -> DCProfileImportState? { profileImporter().currentImport() }
+
+    func importChromeProfile(directory: String, sourceRoot: URL? = nil) throws -> DCProfileImportState {
+        try validateImportSourceLocation(profileImporter(sourceRoot: sourceRoot).sourceRoot)
+        return try withOperationLock {
+            try refuseRunningBrowser()
+            let importer = profileImporter(sourceRoot: sourceRoot)
+            try importer.recoverIfNeeded()
+            return try importer.importProfile(directory: directory,
+                expectedBrowserVersion: browserVersion(sourceChromeURL))
+        }
+    }
+
+    func refreshChromeProfile(expectedSnapshotID: String? = nil) throws -> DCProfileImportState {
+        try validateImportSourceLocation(profileImporter().sourceRoot)
+        return try withOperationLock {
+            try refuseRunningBrowser()
+            let importer = profileImporter()
+            try importer.recoverIfNeeded()
+            if let expectedSnapshotID,
+               try importer.validatedCurrentImport()?.snapshotID != expectedSnapshotID {
+                throw DCFailure("The imported profile changed in another window. Refresh the profile list, then review Update from Chrome again.")
+            }
+            return try importer.refresh(expectedBrowserVersion: browserVersion(sourceChromeURL))
+        }
     }
 
     func launch(url: String? = nil, diagnose: Bool = false, stock: Bool = false, tabs: Bool = false) throws -> DCProcessState {
@@ -110,6 +156,7 @@ final class DeChromeRuntime {
                 throw DCFailure("DeChrome is already running (PID \(running.pid)). Close its window or use dechrome stop before launching another instance.")
             }
             try refuseLiveProfileLock()
+            try profileImporter().recoverIfNeeded()
             if remoteDebuggingBlocked() {
                 throw DCFailure("Chrome's RemoteDebuggingAllowed policy disables the command interface. DeChrome will not override workplace policies; ask your administrator whether this configuration is permitted.")
             }
@@ -140,6 +187,12 @@ final class DeChromeRuntime {
             env["DECHROME_HEALTH_PATH"] = healthURL.path
             env["DECHROME_LAUNCH_ID"] = launchID
             env["DECHROME_TAB_MODE"] = tabs ? "1" : "0"
+            env.removeValue(forKey: "DECHROME_LAUNCHER_APP")
+            let launcherApp = paths.resourcesURL.deletingLastPathComponent().deletingLastPathComponent()
+            if launcherApp.pathExtension == "app",
+               fm.isExecutableFile(atPath: launcherApp.appendingPathComponent("Contents/MacOS/DeChrome").path) {
+                env["DECHROME_LAUNCHER_APP"] = launcherApp.path
+            }
             // A release launch must not inherit development-only frame changes.
             env.removeValue(forKey: "DECHROME_TOP_INSET")
             env.removeValue(forKey: "DECHROME_EXPERIMENTAL_CROP")
@@ -153,10 +206,17 @@ final class DeChromeRuntime {
             defer { try? output.close() }
             let process = Process()
             process.executableURL = browser
+            let importedDirectory = try profileImporter().validatedCurrentImport()?.sourceDirectory
+            if let directory = importedDirectory,
+               directory.isEmpty || directory == "." || directory == ".." ||
+               directory.contains("/") || directory.contains("\\") || directory.contains("\0") {
+                throw DCFailure("The imported Chrome profile directory is invalid. Open Profiles and sync to import it again.")
+            }
+            let profileArguments = importedDirectory.map { ["--profile-directory=\($0)"] } ?? []
             process.arguments = ["--user-data-dir=\(paths.profileURL.path)", "--no-first-run", "--no-default-browser-check",
                                  "--disable-sync", "--disable-background-mode", "--disable-component-update",
                                  "--remote-debugging-address=127.0.0.1", "--remote-debugging-port=0",
-                                 "--window-size=960,720"] + (tabs ? ["--new-window", target] : ["--app=\(target)"])
+                                 "--window-size=960,720"] + profileArguments + (tabs ? ["--new-window", target] : ["--app=\(target)"])
             process.environment = env
             process.standardInput = FileHandle.nullDevice
             process.standardOutput = output
@@ -289,6 +349,12 @@ final class DeChromeRuntime {
             checks.append(DCDiagnostic(level: "warning", name: "Last startup check", detail: lastCheck))
         }
         do {
+            if let imported = try profileImporter().validatedCurrentImport() {
+                checks.append(DCDiagnostic(level: "ok", name: "Imported Chrome profile",
+                    detail: "\(imported.profileName) (\(imported.sourceDirectory)); copied from Chrome on \(ISO8601DateFormatter().string(from: imported.importedAt)). Update from Chrome replaces this separate DeChrome copy."))
+            }
+        } catch { checks.append(DCDiagnostic(level: "error", name: "Imported Chrome profile", detail: error.localizedDescription)) }
+        do {
             if let used = try profileVersion() {
                 checks.append(DCDiagnostic(level: "ok", name: "Profile version", detail: "Highest launched Chrome version: \(used.version). Older versions will not be launched against this profile."))
             }
@@ -365,6 +431,7 @@ final class DeChromeRuntime {
     }
 
     private func withOperationLock<T>(_ operation: () throws -> T) throws -> T {
+        try validateImportSourceLocation(profileImporter().sourceRoot)
         try ensureDirectories()
         let descriptor = Darwin.open(paths.lockURL.path, O_RDWR | O_CREAT | O_CLOEXEC | O_NOFOLLOW, 0o600)
         guard descriptor >= 0 else { throw DCFailure("Could not open DeChrome's operation lock: \(String(cString: strerror(errno))).") }
@@ -372,6 +439,19 @@ final class DeChromeRuntime {
         guard flock(descriptor, LOCK_EX | LOCK_NB) == 0 else { throw DCFailure("Another DeChrome setup, refresh, or launch operation is already running. Retry when it finishes.") }
         defer { flock(descriptor, LOCK_UN) }
         return try operation()
+    }
+
+    // Check before directory creation or chmod: an import source must never be
+    // inside, or contain, a directory that DeChrome owns and may replace.
+    private func validateImportSourceLocation(_ sourceRoot: URL) throws {
+        func canonical(_ url: URL) -> String { url.standardizedFileURL.resolvingSymlinksInPath().path }
+        let source = canonical(sourceRoot)
+        for managed in [paths.dataURL, paths.logsURL] {
+            let destination = canonical(managed)
+            if source == destination || source.hasPrefix(destination + "/") || destination.hasPrefix(source + "/") {
+                throw DCFailure("Chrome's source data folder must be separate from DeChrome's data, backups, and logs. No profile files were changed.")
+            }
+        }
     }
 
     private func ensureDirectories() throws {

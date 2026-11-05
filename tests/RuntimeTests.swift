@@ -311,6 +311,38 @@ private struct RuntimeTests {
             try require(try String(contentsOf: sentinel) == "profile must survive", "Source downgrade changed user data")
         }
 
+        try test("imported profile selection reaches Chrome and a live copy cannot be refreshed") {
+            let imported = try Fixture(repository: repository)
+            defer { imported.cleanup() }
+            let sourceRoot = imported.root.appendingPathComponent("Synthetic Chrome Data", isDirectory: true)
+            let sourceProfile = sourceRoot.appendingPathComponent("Profile 2", isDirectory: true)
+            try FileManager.default.createDirectory(at: sourceProfile, withIntermediateDirectories: true)
+            try "156.0.0.0".write(to: sourceRoot.appendingPathComponent("Last Version"), atomically: true, encoding: .utf8)
+            try JSONSerialization.data(withJSONObject: ["profile": ["info_cache": ["Profile 2":
+                ["name":"Synthetic Work", "user_name":"work@example.invalid"]], "last_used":"Profile 2"]])
+                .write(to: sourceRoot.appendingPathComponent("Local State"))
+            try "{\"profile\":{\"name\":\"Synthetic Work\"}}".write(
+                to: sourceProfile.appendingPathComponent("Preferences"), atomically: true, encoding: .utf8)
+            let importer = DCProfileImporter(destinationRoot: imported.runtime.paths.profileURL,
+                metadataURL: imported.data.appendingPathComponent("imported-profile.json"),
+                sourceRoot: sourceRoot, quiescenceCheck: { _ in })
+            _ = try importer.importProfile(directory: "Profile 2", expectedBrowserVersion: "156.0.0.0")
+            let running = try imported.runtime.launch(url: "about:blank", tabs: true)
+            let arguments = try command("/bin/ps", ["-ww", "-p", String(running.pid), "-o", "command="])
+            try require(arguments.contains("--profile-directory=Profile 2"), "Chrome opened the default profile instead of the imported profile")
+            try require(arguments.contains("--user-data-dir=\(imported.runtime.paths.profileURL.path)"), "Chrome opened the original source profile")
+            let before = try Data(contentsOf: imported.runtime.paths.profileURL.appendingPathComponent("Profile 2/Preferences"))
+            try expectFailure("A running DeChrome profile cannot be replaced") { _ = try imported.runtime.refreshChromeProfile() }
+            try require(try Data(contentsOf: imported.runtime.paths.profileURL.appendingPathComponent("Profile 2/Preferences")) == before,
+                        "Rejected refresh changed the live imported profile")
+            try imported.runtime.stop()
+            try expectFailure("An outdated profile-manager confirmation cannot update a different snapshot") {
+                _ = try imported.runtime.refreshChromeProfile(expectedSnapshotID: "outdated-snapshot")
+            }
+            try require(try Data(contentsOf: imported.runtime.paths.profileURL.appendingPathComponent("Profile 2/Preferences")) == before,
+                        "Outdated profile confirmation changed the imported copy")
+        }
+
         print("\(passed) runtime integration tests passed. Fixtures were headless fake Chrome processes only.")
     }
 }

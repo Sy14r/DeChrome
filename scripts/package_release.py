@@ -100,6 +100,7 @@ def main():
             "notarized": notarized, "includesChrome": False, "includesUserData": False,
             "runtimeVerifiedMacOS": ["26.6.2"],
             "experimentalTabs": bool(info.get("DeChromeExperimentalTabs", False)),
+            "profileImport": bool(info.get("DeChromeProfileImport", False)),
             "sourceCommit": provenance.get("sourceCommit"),
             "sourceDirty": provenance.get("sourceDirty"),
             "macOS27": "requires on-device validation", "files": files,
@@ -116,6 +117,12 @@ def main():
             "Drag DeChrome.app to your Applications folder, then open it.\n"
             "Google Chrome must already be installed. First launch prepares a private copy.\n"
             "Press Command-K to navigate or run commands; Command-L for the current URL.\n\n"
+            "To copy a work profile: Command-K, then Profiles and sync.\n"
+            "Quit regular Chrome and DeChrome while copying; both can run afterward.\n"
+            "Choose the source profile and Import selected profile.\n"
+            "Update from Chrome is a manual one-way refresh that replaces the DeChrome copy.\n"
+            "One previous copy is kept for recovery; DeChrome-only changes are not merged back.\n"
+            "Work sign-ins, device trust and some native extensions may not transfer.\n\n"
             + tabs_note +
             "Application data: ~/Library/Application Support/DeChrome\n"
             "Logs: ~/Library/Logs/DeChrome\n"

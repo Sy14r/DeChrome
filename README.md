@@ -4,7 +4,7 @@ Actual Google Chrome with just page content: no visible title bar, tab bar, addr
 
 DeChrome is a small native Apple Silicon launcher. It uses Chrome already installed on the destination Mac and prepares a private, locally signed copy. The installed Chrome application and ordinary Chrome profile stay separate.
 
-**0.2.1 is an experimental tabs preview.** It uses real Chrome tabs with their bar hidden. Tabs are enabled by default in this preview. Version 0.2.1 fixes tab discovery when Chrome exposes internal pages without browser windows. The **0.1.0 single-page release is retained** as a stable fallback.
+**0.3.0 is an experimental preview with profile import and one-way refresh.** It uses real Chrome tabs with their bar hidden. Tabs are enabled by default. The 0.2.1 startup fix is included. The **0.1.0 single-page release is retained** as a stable fallback.
 
 ## Install on another Mac
 
@@ -19,7 +19,7 @@ When upgrading, quit the DeChrome browser before opening the new app. The next l
 
 The app bundles its native launcher and shim. Python and a compiler are not part of the destination launch process. It uses standard macOS copy and code-signing tools to prepare Chrome locally.
 
-The **0.2.1 preview and retained 0.1.0 release are Developer ID signed and Apple notarized**, with their tickets stapled. Check each ZIP's release manifest for its version, signing, and notarization state. Source builds are locally signed development builds until passed through the release-signing workflow. A managed work Mac may still reject the generated modified browser or restrict Chrome debugging. DeChrome reports those failures and does not change Gatekeeper, quarantine, SIP, or company policies.
+The **0.3.0 preview and retained 0.1.0 release are Developer ID signed and Apple notarized**, with their tickets stapled. Check each ZIP's release manifest for its version, signing, and notarization state. Source builds are locally signed development builds until passed through the release-signing workflow. A managed work Mac may still reject the generated modified browser or restrict Chrome debugging. DeChrome reports those failures and does not change Gatekeeper, quarantine, SIP, or company policies.
 
 This build targets **Apple Silicon / macOS 13 or newer**. Runtime behavior has been verified on **macOS 26.6.2 / Chrome 156.0.8078.80**. The minimum deployment target does not establish compatibility with every intervening or future macOS release. **macOS 27 needs an on-device test.**
 
@@ -48,6 +48,23 @@ To return to the single-page implementation, stop DeChrome and launch with `--si
 
 Reopening DeChrome focuses its existing managed Chrome process. To navigate an already open window, use its palette. An explicit address delivered to the launcher while a browser is open is shown with navigation guidance; it does not silently replace the current page.
 
+## Copy a Chrome work profile
+
+Press **⌘K → Profiles and sync**, or use **Profiles and sync…** in the launcher's recovery window. The profile manager stays open independently of the browser.
+
+1. Choose the profile to copy. The default source is regular Chrome's data folder; **Choose…** supports a different location.
+2. Quit regular Chrome and the DeChrome browser, leaving the profile manager open.
+3. Click **Import selected profile…** and review the confirmation.
+4. Open DeChrome again. Regular Chrome can also run: each browser now has its own copy of the profile.
+
+The snapshot includes the selected profile's extensions and settings, bookmarks, history, and other stored profile data. Other profiles are excluded. Applicable user-level native-messaging manifests are copied; their installed host programs remain dependencies on that Mac. Browser locks and caches are excluded. Unsafe links, active browsers, source changes during copying, and incompatible browser versions stop the import.
+
+**Update from Chrome…** takes a fresh snapshot from the saved source. It is a manual, one-way refresh: **Chrome → DeChrome**. Both browsers must be closed during the update. Updating replaces the DeChrome copy and keeps one previous copy for recovery; changes made only in DeChrome are retained in that backup, not merged into Chrome. Chrome account sync remains disabled in DeChrome.
+
+Copying files does not transfer Google's browser-signing identity or hardware-bound credentials. Some saved sign-ins need reauthentication; managed SSO, Device Trust, passkeys, and native-backed extensions may require the company-approved Chrome app. Import is not a guarantee that every work extension or management feature will function in the modified browser.
+
+The native CLI also provides `profiles --json`, `import-profile 'Profile 2'`, `sync-profile`, and `profiles-ui`. Use `--source-root '/absolute/Chrome/data/folder'` with discovery/import for a custom source.
+
 ## Storage and updates
 
 All generated data lives outside the application:
@@ -57,6 +74,7 @@ All generated data lives outside the application:
 | `~/Library/Application Support/DeChrome/Browser/` | Current private Chrome copy and preparation metadata |
 | `~/Library/Application Support/DeChrome/Browser.previous/` | Previous prepared copy, when available |
 | `~/Library/Application Support/DeChrome/Profile/` | DeChrome cookies, logins, preferences, and browsing history |
+| `~/Library/Application Support/DeChrome/Profile.previous/` | One previous profile copy retained by import/update |
 | `~/Library/Logs/DeChrome/` | Browser and native diagnostic logs |
 
 The ordinary Chrome installation remains the source of browser updates. When installed Chrome advances, the next DeChrome launch while stopped prepares a fresh private copy. Preparation happens in a separate staging directory; signing or copy failures preserve the previous complete browser. The profile is preserved across refreshes.
@@ -143,6 +161,8 @@ The 0.2.0 preview passed 14 lifecycle tests and the packaging privacy regression
 The final notarized 0.2.0 ZIP passed signature, stapled-ticket, Gatekeeper, manifest, and checksum checks. A fresh default-mode install from a path containing spaces reached window and command readiness in about 44 seconds. Its test browser was stopped and temporary profiles were removed.
 
 For 0.2.1, 14 runtime tests and 34 target-policy checks passed, including malformed metadata, auxiliary targets, and keeping transport and policy errors fatal. A live hidden-page regression reproduced `Browser window not found` in 0.2.0; the patched app listed and navigated the real browser tab with the same auxiliary target present. macOS 27 still needs confirmation on the destination Mac.
+
+For 0.3.0, verification includes 15 runtime tests, 17 profile-import tests, 34 target-policy checks, and the packaging privacy regression. An independent audit added 26 synthetic assertions. Live app checks covered profile selection, import, one-way refresh, preservation of DeChrome-only changes in the backup, refusal while either browser was running, and ordinary Chrome running beside the imported DeChrome copy. Tests used disposable profiles; managed work authentication and extension integration need destination testing.
 
 Internal native view classes and experimental Chrome tab metadata can change with Chrome or macOS. A brief browser-header flash may occur before configuration. Two-window tab scoping was checked; more complex multi-monitor arrangements, installed PWAs, docked DevTools layouts, and fullscreen transitions remain unverified. Ambiguous page targets produce an error instead of guessing. A tab whose metadata is still starting asks you to retry navigation. A separate borders utility can still draw its configured outline. macOS 27 remains untested.
 

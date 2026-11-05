@@ -92,6 +92,7 @@ static void DCPaletteOnMain(dispatch_block_t block) {
     DCCommand(@"find", @"Find in page", @"Search for text on the current page", @"text.magnifyingglass", @"⌘F", @"find page text search"),
     DCCommand(@"copy-url", @"Copy page URL", @"Copy the current page address", @"link", @"", @"copy url address link clipboard"),
     DCCommand(@"devtools", @"Toggle Developer Tools", @"Inspect and debug the current page", @"curlybraces", @"⌥⌘I", @"developer devtools inspect console tools"),
+    DCCommand(@"manage-profiles", @"Profiles and sync", @"Import or update a copy of a Chrome profile", @"person.crop.circle", @"", @"profiles work extensions import sync update copy settings"),
     DCCommand(@"close", @"Close window", @"Close this Chrome window", @"xmark", @"⌘W", @"close window quit")
   ];
   if (_tabMode) {
@@ -448,6 +449,37 @@ static void DCPaletteOnMain(dispatch_block_t block) {
     };
     if (self.tabMode) [[DCBrowser sharedBrowser] navigate:result[@"url"] tabID:targetID completion:completion];
     else [[DCBrowser sharedBrowser] navigate:result[@"url"] completion:completion];
+  } else if ([action isEqualToString:@"manage-profiles"]) {
+    const char *appPath = getenv("DECHROME_LAUNCHER_APP");
+    NSURL *url = appPath ? [NSURL fileURLWithPath:@(appPath) isDirectory:YES] : nil;
+    NSBundle *bundle = url ? [NSBundle bundleWithURL:url] : nil;
+    if (![bundle.bundleIdentifier isEqualToString:@"local.dechrome.launcher"] ||
+        ![NSFileManager.defaultManager isExecutableFileAtPath:bundle.executablePath]) {
+      [self showError:[NSError errorWithDomain:@"DeChrome" code:1
+          userInfo:@{NSLocalizedDescriptionKey:@"Reopen DeChrome to access Profiles and sync."}]];
+      return;
+    }
+    NSWorkspaceOpenConfiguration *configuration = NSWorkspaceOpenConfiguration.configuration;
+    configuration.arguments = @[@"profiles-ui"];
+    configuration.createsNewApplicationInstance = YES;
+    NSMutableDictionary *environment = [NSMutableDictionary new];
+    for (NSString *key in @[@"DECHROME_DATA_DIR", @"DECHROME_LOG_DIR", @"DECHROME_CHROME_PATH",
+                            @"DECHROME_RESOURCES_DIR", @"DECHROME_PROFILE_SOURCE_DIR"]) {
+      NSString *value = NSProcessInfo.processInfo.environment[key];
+      if (value.length) environment[key] = value;
+    }
+    configuration.environment = environment;
+    NSWindow *owner = self.owner;
+    [self dismissRestoringFocus:NO];
+    [NSWorkspace.sharedWorkspace openApplicationAtURL:url configuration:configuration
+        completionHandler:^(__unused NSRunningApplication *application, NSError *error) {
+      if (!error) return;
+      DCPaletteOnMain(^{
+        if (!owner.visible) return;
+        [self showForOwner:owner query:@"Profiles and sync"];
+        [self showError:error];
+      });
+    }];
   } else if ([action isEqualToString:@"copy-url"]) {
     [[DCBrowser sharedBrowser] currentPageInfo:^(NSDictionary *info, NSError *error) {
       dispatch_async(dispatch_get_main_queue(), ^{

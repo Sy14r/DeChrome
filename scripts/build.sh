@@ -22,7 +22,7 @@ trap 'rm -rf "$DECHROME_STAGE"' EXIT HUP INT TERM
   -o "$DECHROME_STAGE/Contents/Resources/DeChrome.dylib"
 /usr/bin/xcrun swiftc -swift-version 5 -parse-as-library -O -whole-module-optimization \
   -target "$DECHROME_TARGET" -module-cache-path "$DECHROME_BUILD/module-cache" \
-  -framework AppKit -framework Foundation launcher/DeChromeCore.swift launcher/DeChromeMain.swift \
+  -framework AppKit -framework Foundation launcher/DeChromeCore.swift launcher/DeChromeProfiles.swift launcher/DeChromeMain.swift \
   -o "$DECHROME_STAGE/Contents/MacOS/DeChrome"
 /bin/cp resources/Info.plist "$DECHROME_STAGE/Contents/Info.plist"
 /bin/cp resources/Start.html "$DECHROME_STAGE/Contents/Resources/Start.html"
@@ -34,7 +34,7 @@ mkdir -p "$DECHROME_BUILD/AppIcon.iconset"
 "$DECHROME_BUILD/make-icon" "$DECHROME_BUILD/AppIcon.iconset"
 /bin/cp "$DECHROME_BUILD/AppIcon.icns" "$DECHROME_STAGE/Contents/Resources/AppIcon.icns"
 /bin/cat > "$DECHROME_STAGE/Contents/Resources/build-info.json" <<EOF
-{"version":"$DECHROME_VERSION","architecture":"arm64","minimumMacOS":"13.0","signing":"ad-hoc development","experimentalTabs":true,"sourceCommit":$DECHROME_SOURCE_COMMIT,"sourceDirty":$DECHROME_SOURCE_DIRTY,"runtimeVerifiedMacOS":["26.6.2"],"runtimeVerifiedChrome":["156.0.8078.80"],"macOS27":"requires on-device validation"}
+{"version":"$DECHROME_VERSION","architecture":"arm64","minimumMacOS":"13.0","signing":"ad-hoc development","experimentalTabs":true,"profileImport":true,"sourceCommit":$DECHROME_SOURCE_COMMIT,"sourceDirty":$DECHROME_SOURCE_DIRTY,"runtimeVerifiedMacOS":["26.6.2"],"runtimeVerifiedChrome":["156.0.8078.80"],"macOS27":"requires on-device validation"}
 EOF
 /usr/bin/codesign --force --sign - --timestamp=none "$DECHROME_STAGE/Contents/Resources/DeChrome.dylib"
 /usr/bin/codesign --force --sign - --options runtime --timestamp=none "$DECHROME_STAGE"
