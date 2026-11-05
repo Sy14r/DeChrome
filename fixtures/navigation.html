@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DeChrome navigation test</title>
+<style>
+  html { background: #11202a; color: #e9f4f5; font: 18px/1.6 system-ui; }
+  body { margin: 0; padding: 64px; border-top: 8px solid #6fe2c0; }
+  h1 { font-size: 40px; line-height: 1.2; }
+  a { color: #6fe2c0; }
+</style>
+<h1>Navigation works.</h1>
+<p>This is the second local page. Use ⌘K → Back to return, then ⌘K → Forward to come here again.</p>
+<p><a href="index.html">Return to the verification page</a></p>
+<p id="loaded"></p>
+<script>document.querySelector('#loaded').textContent = `Page loaded at ${new Date().toLocaleTimeString()}`;</script>
+</html>

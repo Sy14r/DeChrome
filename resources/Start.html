@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DeChrome</title>
+<style>
+  :root { color-scheme: dark; font: 16px/1.6 -apple-system, BlinkMacSystemFont, sans-serif; background: #10212a; color: #edf5f5; }
+  * { box-sizing: border-box; }
+  body { min-height: 100vh; display: grid; place-items: center; margin: 0; padding: 36px; }
+  main { width: min(100%, 560px); }
+  .mark { width: 52px; height: 40px; border: 2px solid #6fe2c0; border-radius: 8px; margin-bottom: 40px; }
+  h1 { font-size: clamp(36px, 6vw, 56px); line-height: 1.1; letter-spacing: -2px; font-weight: 550; margin: 0 0 20px; }
+  p { color: #a5bac4; margin: 0 0 32px; font-size: 18px; }
+  .shortcut { display: inline-flex; gap: 14px; align-items: center; margin-bottom: 48px; }
+  kbd { border: 1px solid #46616c; background: #1c3540; color: #d9eeed; border-radius: 7px; padding: 6px 12px; font: 16px/1.4 -apple-system, BlinkMacSystemFont, sans-serif; }
+  footer { color: #78939f; font-size: 13px; }
+</style>
+<main>
+  <div class="mark" aria-hidden="true"></div>
+  <h1>A little more room.</h1>
+  <p>Go somewhere. Find something. Keep the rest out of the way.</p>
+  <div class="shortcut"><kbd>⌘ K</kbd><span>Navigate or run a command</span></div>
+  <footer id="keys">⌘L for the current address &nbsp;·&nbsp; Escape to return to your page</footer>
+</main>
+<script>
+  if (new URLSearchParams(location.search).has('tabs')) {
+    document.querySelector('#keys').textContent='⌘T new tab · ⌘W close tab · Control-Tab next tab · ⌘1–9 switch tabs';
+  }
+</script>
+</html>

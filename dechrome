@@ -1,0 +1,17 @@
+#!/bin/sh
+set -eu
+DECHROME_ROOT=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+DECHROME_BINARY="$DECHROME_ROOT/build/DeChrome.app/Contents/MacOS/DeChrome"
+if [ "${1:-}" = build ]; then
+  exec "$DECHROME_ROOT/scripts/build.sh"
+fi
+DECHROME_REBUILD=0
+if [ ! -x "$DECHROME_BINARY" ]; then
+  DECHROME_REBUILD=1
+else
+  for DECHROME_INPUT in "$DECHROME_ROOT"/launcher/*.swift "$DECHROME_ROOT"/native/*.[mh] "$DECHROME_ROOT"/resources/* "$DECHROME_ROOT/scripts/build.sh" "$DECHROME_ROOT/scripts/make_icon.swift"; do
+    if [ "$DECHROME_INPUT" -nt "$DECHROME_BINARY" ]; then DECHROME_REBUILD=1; break; fi
+  done
+fi
+if [ "$DECHROME_REBUILD" = 1 ]; then "$DECHROME_ROOT/scripts/build.sh"; fi
+exec "$DECHROME_BINARY" "$@"
