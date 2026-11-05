@@ -215,9 +215,9 @@ static void DCWriteHealth(NSWindow *window) {
   }
   if (!fillsWindow || ![window.accessibilityRole isEqualToString:NSAccessibilityWindowRole] ||
       ![window.accessibilitySubrole isEqualToString:NSAccessibilityStandardWindowSubrole]) return;
-  NSDictionary *report = @{
+  NSMutableDictionary *report = [@{
     @"schema": @1, @"launchID": @(launchID), @"pid": @(getpid()),
-    @"configured": @YES, @"paletteInstalled": @YES, @"commandInterfaceReady": @YES,
+    @"configured": @YES, @"paletteInstalled": @YES, @"commandInterfaceReady": @NO,
     @"windowNumber": @(window.windowNumber),
     @"role": window.accessibilityRole, @"subrole": window.accessibilitySubrole,
     @"frame": @{@"width": @(frameSize.width), @"height": @(frameSize.height)},
@@ -226,7 +226,7 @@ static void DCWriteHealth(NSWindow *window) {
     @"contentRoot": @{@"width": @(content.frame.size.width), @"height": @(content.frame.size.height)},
     @"contentViewport": @(DCTabMode), @"tabMode": @(DCTabMode),
     @"chromeHeaderInset": @(state.inset)
-  };
+  } mutableCopy];
   NSString *healthPath = @(path);
   DCHealthPending = YES;
   [DCBrowser sharedBrowser].targetWindow = window;
@@ -235,12 +235,16 @@ static void DCWriteHealth(NSWindow *window) {
     DCHealthNextAttempt = CACurrentMediaTime() + 1;
     if (error) {
       DCLog(@"startup command interface not ready: %@", error.localizedDescription);
-      return;
+      report[@"commandError"] = error.localizedDescription;
+    } else {
+      report[@"commandInterfaceReady"] = @YES;
     }
     NSData *data = [NSJSONSerialization dataWithJSONObject:report options:NSJSONWritingPrettyPrinted error:nil];
     if (data && [data writeToFile:healthPath options:NSDataWritingAtomic error:nil]) {
-      DCHealthWritten = YES;
-      DCLog(@"startup health verified window=%ld", (long)window.windowNumber);
+      if (!error) {
+        DCHealthWritten = YES;
+        DCLog(@"startup health verified window=%ld", (long)window.windowNumber);
+      }
     }
   }];
 }

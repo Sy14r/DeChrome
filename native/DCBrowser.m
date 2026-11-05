@@ -1,5 +1,8 @@
 #import "DCBrowser.h"
+#import "DCBrowserTargetPolicy.h"
 #import <objc/runtime.h>
+#import <fcntl.h>
+#import <unistd.h>
 
 static NSString *const DCBrowserErrorDomain = @"DeChrome.Browser";
 
@@ -11,6 +14,20 @@ static NSError *DCBrowserError(NSInteger code, NSString *message) {
 static void DCOnMain(dispatch_block_t block) {
   if (NSThread.isMainThread) block();
   else dispatch_async(dispatch_get_main_queue(), block);
+}
+
+static void DCLogTabTargetCounts(NSUInteger discovered, NSUInteger auxiliary,
+                                NSUInteger missingWindow, NSUInteger browserTabs,
+                                NSUInteger failures) {
+  const char *path = getenv("DECHROME_LOG_PATH");
+  if (!path || !*path) return;
+  NSString *line = [NSString stringWithFormat:
+      @"[DeChrome pid=%d] tab targets discovered=%lu auxiliary=%lu missingBrowserWindow=%lu browserTabs=%lu failures=%lu\n",
+      getpid(), (unsigned long)discovered, (unsigned long)auxiliary,
+      (unsigned long)missingWindow, (unsigned long)browserTabs, (unsigned long)failures];
+  NSData *data = [line dataUsingEncoding:NSUTF8StringEncoding];
+  int descriptor = open(path, O_WRONLY | O_APPEND | O_CREAT, 0600);
+  if (descriptor >= 0) { (void)write(descriptor, data.bytes, data.length); close(descriptor); }
 }
 
 typedef void (^DCProtocolReply)(NSDictionary * _Nullable result, NSError * _Nullable error);
@@ -76,7 +93,10 @@ typedef void (^DCProtocolReply)(NSDictionary * _Nullable result, NSError * _Null
         if (protocolError) {
           NSString *description = [protocolError[@"message"] isKindOfClass:NSString.class] ?
               protocolError[@"message"] : @"Chrome could not perform that command.";
-          callback(nil, DCBrowserError(12, description));
+          NSMutableDictionary *details = [@{NSLocalizedDescriptionKey:description} mutableCopy];
+          if ([protocolError[@"code"] isKindOfClass:NSNumber.class])
+            details[@"CDPCode"] = protocolError[@"code"];
+          callback(nil, [NSError errorWithDomain:DCBrowserErrorDomain code:12 userInfo:details]);
         } else {
           NSDictionary *result = [reply[@"result"] isKindOfClass:NSDictionary.class] ? reply[@"result"] : @{};
           callback(result, nil);
@@ -346,16 +366,25 @@ static void DCFindFocusView(NSView *view, NSView **best, CGFloat *bestArea) {
       if (targetError) { [connection close]; completion(nil, targetError); return; }
       NSArray *infos = [result[@"targetInfos"] isKindOfClass:NSArray.class] ? result[@"targetInfos"] : @[];
       NSMutableArray<NSDictionary *> *tabInfos = [NSMutableArray new];
+      NSUInteger tabTargetCount = 0;
+      NSUInteger auxiliaryCount = 0;
       for (NSDictionary *info in infos) {
-        if ([info isKindOfClass:NSDictionary.class] && [info[@"type"] isEqual:@"tab"] && [info[@"targetId"] isKindOfClass:NSString.class])
-          [tabInfos addObject:info];
+        if (![info isKindOfClass:NSDictionary.class] || ![info[@"type"] isEqual:@"tab"]) continue;
+        tabTargetCount++;
+        if (DCTargetHasTabStripMetadata(info)) [tabInfos addObject:info];
+        else auxiliaryCount++;
       }
       if (!tabInfos.count) {
         [connection close];
-        completion(nil, DCBrowserError(21, @"This Chrome build did not expose browser tabs. Use single-page mode as a fallback."));
+        DCLogTabTargetCounts(tabTargetCount, auxiliaryCount, 0, 0, 0);
+        completion(nil, DCBrowserError(21, tabTargetCount ?
+            @"Chrome exposed page targets but no usable tab-strip metadata. Complete any Chrome profile or sign-in setup, then retry. This Chrome build may require single-page mode." :
+            @"Chrome has not exposed a browser tab yet. Complete any Chrome profile or sign-in setup, then retry; single-page mode is also available."));
         return;
       }
       __block NSUInteger remaining = tabInfos.count;
+      __block NSUInteger missingWindowCount = 0;
+      __block NSUInteger failureCount = 0;
       __block NSError *firstError;
       __block BOOL complete = NO;
       NSMutableArray<NSDictionary *> *tabs = [NSMutableArray new];
@@ -365,8 +394,12 @@ static void DCFindFocusView(NSView *view, NSView **best, CGFloat *bestArea) {
           if (complete) return;
           NSDictionary *embedder = [info[@"embedderData"] isKindOfClass:NSDictionary.class] ? info[@"embedderData"] : nil;
           NSNumber *windowID = [windowInfo[@"windowId"] isKindOfClass:NSNumber.class] ? windowInfo[@"windowId"] : nil;
-          if (windowError || !windowID || ![embedder[@"tabStripIndex"] isKindOfClass:NSNumber.class] ||
-              ![embedder[@"tabActive"] isKindOfClass:NSNumber.class]) {
+          if (DCTargetWindowLookupCanBeSkipped(windowError)) {
+            // A tab may be detached or closed between the target snapshot and
+            // this lookup. It must not invalidate surviving browser tabs.
+            missingWindowCount++;
+          } else if (windowError || !windowID || !DCTargetHasTabStripMetadata(info)) {
+            failureCount++;
             if (!firstError) firstError = windowError ?: DCBrowserError(22, @"Chrome's tab metadata is unavailable in this build. Use single-page mode as a fallback.");
           } else {
             [tabs addObject:@{@"id":info[@"targetId"], @"title":info[@"title"] ?: @"Untitled",
@@ -377,9 +410,16 @@ static void DCFindFocusView(NSView *view, NSView **best, CGFloat *bestArea) {
           if (--remaining) return;
           complete = YES;
           [connection close];
+          DCLogTabTargetCounts(tabTargetCount, auxiliaryCount, missingWindowCount,
+                               tabs.count, failureCount);
           NSError *closedError = DCBrowserWindowError(owner);
           if (closedError) { completion(nil, closedError); return; }
           if (firstError) { completion(nil, firstError); return; }
+          if (!tabs.count) {
+            completion(nil, DCBrowserError(28,
+                @"Chrome's page targets do not belong to an available browser window. Complete any Chrome profile or sign-in setup, or wait for its browser window, then retry. Single-page mode is also available."));
+            return;
+          }
           NSRect frame = owner.frame;
           CGFloat screenTop = NSMaxY(NSScreen.screens.firstObject.frame);
           NSMutableSet<NSNumber *> *windowIDs = [NSMutableSet new];

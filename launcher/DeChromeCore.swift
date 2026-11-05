@@ -192,7 +192,9 @@ final class DeChromeRuntime {
             // This is our new child; stop it without touching an unrelated PID.
             terminateOwnChild(process)
             if !process.isRunning { try? fm.removeItem(at: paths.stateURL) }
-            throw DCFailure("Chrome's content-only window and command interface did not become ready within 90 seconds. macOS/Chrome compatibility or managed debugging policy may be responsible. Run dechrome doctor and inspect \(paths.logsURL.path). The browser profile has been preserved.")
+            let lastCheck = startupCommandError(healthURL, launchID: launchID)
+            let detail = lastCheck.map { "\n\nLast startup check: \($0)" } ?? ""
+            throw DCFailure("Chrome's content-only window and command interface did not become ready within 90 seconds.\(detail)\n\nRun Diagnostics in DeChrome, or dechrome doctor, and inspect \(paths.logsURL.path). You can also clear Enable tabs (experimental) and retry single-page mode. The browser profile has been preserved.")
         }
     }
 
@@ -283,6 +285,9 @@ final class DeChromeRuntime {
             let running = try status()
             checks.append(DCDiagnostic(level: "ok", name: "Browser process", detail: running.map { "Running, PID \($0.pid), Chrome \($0.browserVersion)." } ?? "Stopped."))
         } catch { checks.append(DCDiagnostic(level: "error", name: "Browser process", detail: error.localizedDescription)) }
+        if let lastCheck = startupCommandError(paths.dataURL.appendingPathComponent("health.json")) {
+            checks.append(DCDiagnostic(level: "warning", name: "Last startup check", detail: lastCheck))
+        }
         do {
             if let used = try profileVersion() {
                 checks.append(DCDiagnostic(level: "ok", name: "Profile version", detail: "Highest launched Chrome version: \(used.version). Older versions will not be launched against this profile."))
@@ -613,6 +618,15 @@ final class DeChromeRuntime {
                 Darwin.connect(descriptor, $0, socklen_t(MemoryLayout<sockaddr_in>.size)) == 0
             }
         }
+    }
+
+    private func startupCommandError(_ file: URL, launchID: String? = nil) -> String? {
+        guard let data = try? Data(contentsOf: file),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              launchID == nil || object["launchID"] as? String == launchID,
+              object["commandInterfaceReady"] as? Bool == false,
+              let error = object["commandError"] as? String, !error.isEmpty else { return nil }
+        return error
     }
 
     private func healthyWindow(_ file: URL, launchID: String) -> Bool {

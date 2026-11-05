@@ -4,7 +4,7 @@ Actual Google Chrome with just page content: no visible title bar, tab bar, addr
 
 DeChrome is a small native Apple Silicon launcher. It uses Chrome already installed on the destination Mac and prepares a private, locally signed copy. The installed Chrome application and ordinary Chrome profile stay separate.
 
-**0.2.0 is an experimental tabs preview.** It uses real Chrome tabs with their bar hidden. Tabs are enabled by default in this preview. The **0.1.0 single-page release is retained** as a stable fallback.
+**0.2.1 is an experimental tabs preview.** It uses real Chrome tabs with their bar hidden. Tabs are enabled by default in this preview. Version 0.2.1 fixes tab discovery when Chrome exposes internal pages without browser windows. The **0.1.0 single-page release is retained** as a stable fallback.
 
 ## Install on another Mac
 
@@ -19,7 +19,7 @@ When upgrading, quit the DeChrome browser before opening the new app. The next l
 
 The app bundles its native launcher and shim. Python and a compiler are not part of the destination launch process. It uses standard macOS copy and code-signing tools to prepare Chrome locally.
 
-The **0.2.0 preview and retained 0.1.0 release are Developer ID signed and Apple notarized**, with their tickets stapled. Check each ZIP's release manifest for its version, signing, and notarization state. Source builds are locally signed development builds until passed through the release-signing workflow. A managed work Mac may still reject the generated modified browser or restrict Chrome debugging. DeChrome reports those failures and does not change Gatekeeper, quarantine, SIP, or company policies.
+The **0.2.1 preview and retained 0.1.0 release are Developer ID signed and Apple notarized**, with their tickets stapled. Check each ZIP's release manifest for its version, signing, and notarization state. Source builds are locally signed development builds until passed through the release-signing workflow. A managed work Mac may still reject the generated modified browser or restrict Chrome debugging. DeChrome reports those failures and does not change Gatekeeper, quarantine, SIP, or company policies.
 
 This build targets **Apple Silicon / macOS 13 or newer**. Runtime behavior has been verified on **macOS 26.6.2 / Chrome 156.0.8078.80**. The minimum deployment target does not establish compatibility with every intervening or future macOS release. **macOS 27 needs an on-device test.**
 
@@ -81,6 +81,8 @@ The app executable also provides a native CLI:
 
 Use the corresponding path if installed in your user Applications folder. `doctor` checks architecture, OS, Chrome, resources, available policy settings, profile version records, and managed process state. It cannot establish workplace approval. Refresh and rollback require the browser to be stopped.
 
+The launcher's **Diagnostics…** button runs the same checks as `doctor`. If startup reaches a configured window but its command interface fails, the timeout and diagnostics include the last command error. The native log also records counts of browser and auxiliary targets without their page titles or addresses.
+
 On startup, DeChrome requires a fresh report from its injected shim confirming a normal accessible window with the page filling its physical frame. It also verifies a working Chrome DevTools Protocol command, not just an open port. Cold launches allow up to 90 seconds for macOS assessment of the locally signed Chrome copy. If readiness fails, the new child is stopped and an actionable error points to logs.
 
 The palette's debugging interface listens at a random **127.0.0.1** port only. It can control this separate profile. No permissive debugging-origin flag is used. Keep the ordinary browser profile separate.
@@ -139,6 +141,8 @@ The 0.1.0 release passed 13 lifecycle tests and a clean first install in about 2
 The 0.2.0 preview passed 14 lifecycle tests and the packaging privacy regression. Live checks used isolated synthetic pages with identical titles: real tab creation, independent drafts and JavaScript state across switches, title/URL tab search, tab shortcuts, links opening tabs, active-tab history, individual tab close, window close preserving another window's tabs, and process exit after the last tab closes. AeroSpace tiling changed the visible viewport from 1699 to 500 pixels wide and back without revealing Chrome's header. Rapid navigation followed immediately by a new tab preserved each tab's intended URL.
 
 The final notarized 0.2.0 ZIP passed signature, stapled-ticket, Gatekeeper, manifest, and checksum checks. A fresh default-mode install from a path containing spaces reached window and command readiness in about 44 seconds. Its test browser was stopped and temporary profiles were removed.
+
+For 0.2.1, 14 runtime tests and 34 target-policy checks passed, including malformed metadata, auxiliary targets, and keeping transport and policy errors fatal. A live hidden-page regression reproduced `Browser window not found` in 0.2.0; the patched app listed and navigated the real browser tab with the same auxiliary target present. macOS 27 still needs confirmation on the destination Mac.
 
 Internal native view classes and experimental Chrome tab metadata can change with Chrome or macOS. A brief browser-header flash may occur before configuration. Two-window tab scoping was checked; more complex multi-monitor arrangements, installed PWAs, docked DevTools layouts, and fullscreen transitions remain unverified. Ambiguous page targets produce an error instead of guessing. A tab whose metadata is still starting asks you to retry navigation. A separate borders utility can still draw its configured outline. macOS 27 remains untested.
 

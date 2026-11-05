@@ -17,7 +17,7 @@ private func dcResourcesURL() -> URL {
 }
 
 private func dcVersion() -> String {
-    Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.2.0"
+    Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.2.1"
 }
 
 private func dcTabsByDefault() -> Bool {
@@ -263,7 +263,7 @@ private final class DCAppDelegate: NSObject, NSApplicationDelegate, NSWindowDele
         let url = typed.isEmpty ? pendingURL : typed
         let useTabs = tabsCheckbox.state == .on
         pendingURL = nil
-        setBusy(true, message: "Opening your browser… First launch can take up to 45 seconds.")
+        setBusy(true, message: "Opening your browser… First launch can take up to 90 seconds.")
         worker.async {
             do {
                 let existing = try self.runtime.status()
